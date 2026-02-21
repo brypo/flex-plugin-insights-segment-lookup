@@ -1,6 +1,6 @@
 # Flex Insights Segment Lookup Solution
 
-A complete Twilio Flex solution for looking up Flex Insights segment IDs by Task SID directly from the Flex agent UI.
+A Twilio Flex solution for looking up Flex Insights segment IDs by Task SID directly from the Flex agent UI.
 
 ## What This Does
 
