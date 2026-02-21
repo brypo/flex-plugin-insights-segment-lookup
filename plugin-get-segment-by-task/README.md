@@ -146,6 +146,7 @@ Location: `src/components/SegmentLookup.js`
 - 📘 [Main README](../README.md) - Complete solution overview
 - 📗 [Serverless README](../serverless-get-segment-id/README.md) - Backend API documentation
 - 🔗 [Flex Plugins Documentation](https://www.twilio.com/docs/flex/developer/plugins)
+- 🔗 [Using Twilio Functions Securely with Flex Plugins](https://www.twilio.com/docs/flex/developer/plugins/call-functions)
 - 🔗 [Flex UI Components](https://www.twilio.com/docs/flex/developer/ui)
 - 🔗 [Environment Variables in Flex](https://www.twilio.com/docs/flex/developer/plugins/environment-variables)
 

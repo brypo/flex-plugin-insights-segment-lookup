@@ -170,6 +170,7 @@ flex-plugin-get-insights-segment/
 - 📗 [Serverless Documentation](./serverless-get-segment-id/README.md) - Backend API & implementation
 - 🔗 [Twilio Flex Plugins](https://www.twilio.com/docs/flex/developer/plugins)
 - 🔗 [Twilio Serverless](https://www.twilio.com/docs/serverless)
+- 🔗 [Using Twilio Functions Securely with Flex Plugins](https://www.twilio.com/docs/flex/developer/plugins/call-functions)
 - 🔗 [Flex Insights API](https://www.twilio.com/docs/flex/developer/insights)
 
 ## Security

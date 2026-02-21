@@ -227,6 +227,7 @@ New SST generated and cached (expires in...)  ← Cache miss
 - 📘 [Main README](../README.md) - Complete solution overview and quick start
 - 📙 [Plugin README](../plugin-get-segment-by-task/README.md) - Frontend setup and usage
 - 🔗 [Twilio Serverless Documentation](https://www.twilio.com/docs/serverless)
+- 🔗 [Using Twilio Functions Securely with Flex Plugins](https://www.twilio.com/docs/flex/developer/plugins/call-functions)
 - 🔗 [Flex Token Validator](https://www.npmjs.com/package/twilio-flex-token-validator)
 - 🔗 [Flex Insights API](https://www.twilio.com/docs/flex/developer/insights/api/general-usage)
 
