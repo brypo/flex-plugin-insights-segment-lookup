@@ -1,0 +1,22 @@
+{
+  "name": "plugin-get-segment-by-task",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "flex-plugin pre-script-check"
+  },
+  "dependencies": {
+    "@twilio-paste/core": "^15.3.1",
+    "@twilio-paste/icons": "^9.2.0",
+    "@twilio/flex-plugin": "7.1.2",
+    "dotenv-webpack": "^8.1.1",
+    "prop-types": "^15.7.2",
+    "react": "17.0.2",
+    "react-dom": "17.0.2"
+  },
+  "devDependencies": {
+    "@twilio/flex-plugin-scripts": "7.1.2",
+    "@twilio/flex-ui": "2.16.0",
+    "react-test-renderer": "17.0.2"
+  }
+}
