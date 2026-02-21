@@ -30,36 +30,10 @@ const tokenCache = {
   ttExpiry: null       // Expiration timestamp for TT
 };
 
-// Helper function to check if cached token is still valid
-function isCacheValid(expiryTimestamp) {
-  if (!expiryTimestamp) return false;
-  // Add 60 second buffer before expiration to be safe
-  return Date.now() < (expiryTimestamp - 60000);
-}
-
-// Helper function to invalidate token cache when errors occur
-function invalidateTokenCache() {
-  console.log('Invalidating token cache');
-  tokenCache.tt = null;
-  tokenCache.ttExpiry = null;
-  tokenCache.sst = null;
-  tokenCache.sstExpiry = null;
-}
-
-// Helper function to detect authentication errors
-function isAuthError(error) {
-  const status = error.response?.status;
-  const message = error.message?.toLowerCase() || '';
-  return status === 401 || status === 403 || 
-         message.includes('auth') || message.includes('unauthorized');
-}
-
 exports.handler = TokenValidator(async function(context, event, callback) {
   const response = new Twilio.Response();
   
-  // Set CORS headers
-  // NOTE: For production, consider restricting Access-Control-Allow-Origin
-  // to your specific Flex domain instead of '*'
+  // Set CORS headers to allow requests from Flex UI
   response.appendHeader('Access-Control-Allow-Origin', '*');
   response.appendHeader('Access-Control-Allow-Methods', 'OPTIONS, GET');
   response.appendHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -84,30 +58,14 @@ exports.handler = TokenValidator(async function(context, event, callback) {
     // Use cached tokens when possible to avoid excessive token generation
     const token = await getCachedTempToken(INSIGHTS_USERNAME, INSIGHTS_PASSWORD);
     
-    try {
-      const reportExecution = await executeReport(token, ANALYTICS_WORKSPACE, INSIGHTS_REPORT, TaskSid);
-      const csvData = await downloadReportCsv(token, reportExecution);
-      const segmentIds = parseSegmentIds(csvData);
+    // Execute the report filtered by TaskSid and parse results
+    const reportExecution = await executeReport(token, ANALYTICS_WORKSPACE, INSIGHTS_REPORT, TaskSid);
+    const csvData = await downloadReportCsv(token, reportExecution);
+    const segmentIds = parseSegmentIds(csvData);
 
-      response.setStatusCode(200);
-      response.setBody({ segment_ids: segmentIds });
-      return callback(null, response);
-    } catch (error) {
-      // If error is auth-related and we used a cached token, retry with fresh token
-      if (isAuthError(error) && tokenCache.tt) {
-        console.log('Auth error with cached token, invalidating cache and retrying...');
-        invalidateTokenCache();
-        const freshToken = await getCachedTempToken(INSIGHTS_USERNAME, INSIGHTS_PASSWORD);
-        const reportExecution = await executeReport(freshToken, ANALYTICS_WORKSPACE, INSIGHTS_REPORT, TaskSid);
-        const csvData = await downloadReportCsv(freshToken, reportExecution);
-        const segmentIds = parseSegmentIds(csvData);
-
-        response.setStatusCode(200);
-        response.setBody({ segment_ids: segmentIds });
-        return callback(null, response);
-      }
-      throw error; // Re-throw if not auth error or retry already attempted
-    }
+    response.setStatusCode(200);
+    response.setBody({ segment_ids: segmentIds });
+    return callback(null, response);
 
   } catch (error) {
     console.error('Error:', error.message);
@@ -119,8 +77,8 @@ exports.handler = TokenValidator(async function(context, event, callback) {
 
 // Get temporary token with caching logic
 async function getCachedTempToken(username, password) {
-  // Check if we have a valid temporary token cached
-  if (tokenCache.tt && isCacheValid(tokenCache.ttExpiry)) {
+  // Check if we have a valid temporary token cached (with 60s buffer before expiry)
+  if (tokenCache.tt && tokenCache.ttExpiry && Date.now() < (tokenCache.ttExpiry - 60000)) {
     console.log('Using cached temporary token (TT)');
     return tokenCache.tt;
   }
@@ -128,7 +86,7 @@ async function getCachedTempToken(username, password) {
   console.log('Temporary token (TT) expired or missing, refreshing...');
   
   // Check if we have a valid SST to use for getting a new TT
-  if (!tokenCache.sst || !isCacheValid(tokenCache.sstExpiry)) {
+  if (!tokenCache.sst || !tokenCache.sstExpiry || Date.now() >= (tokenCache.sstExpiry - 60000)) {
     console.log('SuperSecuredToken (SST) expired or missing, generating new SST...');
     await getSuperSecuredToken(username, password);
   } else {
@@ -141,51 +99,50 @@ async function getCachedTempToken(username, password) {
   return tokenCache.tt;
 }
 
-// Helper function to get SuperSecuredToken (SST) using username and password
+// Get SuperSecuredToken (SST) using username and password
 async function getSuperSecuredToken(username, password) {
   const response = await axios.post('https://analytics.ytica.com/gdc/account/login', {
     postUserLogin: { login: username, password, remember: 0, verify_level: 2 }
   });
+  
   if (!response.data?.userLogin?.token) throw new Error('Authentication failed');
   
-  // Cache SST with 2-week expiration (14 days in milliseconds)
+  // Cache SST with 2-week expiration
   tokenCache.sst = response.data.userLogin.token;
   tokenCache.sstExpiry = Date.now() + (14 * 24 * 60 * 60 * 1000);
-  
   console.log('New SST generated and cached (expires in 14 days)');
-  return response;
 }
 
-// Helper function to get temporary token using SST
+// Get temporary token using SST
 async function getTempToken() {
   const response = await axios.get('https://analytics.ytica.com/gdc/account/token', {
     headers: { 'X-GDC-AuthSST': tokenCache.sst }
   });
+  
   if (!response.data?.userToken?.token) throw new Error('Failed to get temporary token');
   
   // Cache TT with conservative 10-minute expiration
-  // GoodData TT typically lasts longer, but we use short TTL to be safe
   tokenCache.tt = response.data.userToken.token;
   tokenCache.ttExpiry = Date.now() + (10 * 60 * 1000);
-  
   console.log('New TT generated and cached (expires in 10 minutes)');
-  return response.data.userToken.token;
 }
 
-// Helper function to find external ID elements in a display form
+// Find external ID elements in a display form (filters report by Task SID)
 async function findExternalIdElements(token, workspaceId, displayFormId, externalId) {
   const response = await axios.post(
     `https://analytics.ytica.com/gdc/md/${workspaceId}/obj/${displayFormId}/validElements`,
     { validElementsRequest: { titles: [externalId] } },
     { headers: { Cookie: `GDCAuthTT=${token}` } }
   );
+  
   if (!response.data?.validElements?.items?.length) {
     throw new Error(`External ID '${externalId}' not found in Flex Insights`);
   }
+  
   return response.data.validElements.items.map(item => item.element.uri);
 }
 
-// Helper function to execute report and return execution URI
+// Execute report with External ID filter and return execution URI
 async function executeReport(token, workspaceId, reportId, externalId) {
   const elementUris = await findExternalIdElements(token, workspaceId, EXTERNAL_ID_DISPLAY_FORM, externalId);
   
@@ -204,11 +161,12 @@ async function executeReport(token, workspaceId, reportId, externalId) {
     },
     { headers: { Cookie: `GDCAuthTT=${token}` } }
   );
+  
   if (!response.data?.uri) throw new Error('Report execution failed');
   return response;
 }
 
-// Helper function to download report CSV data
+// Download report CSV data (polls until ready, max 10 seconds)
 async function downloadReportCsv(token, reportExecution) {
   for (let i = 0; i < 10; i++) {
     try {
@@ -225,7 +183,7 @@ async function downloadReportCsv(token, reportExecution) {
   throw new Error('Report timeout after 10 seconds');
 }
 
-// Helper function to parse CSV data and extract segment IDs
+// Parse CSV data and extract segment IDs from first column
 function parseSegmentIds(csvData) {
   if (!csvData || typeof csvData !== 'string') return [];
   

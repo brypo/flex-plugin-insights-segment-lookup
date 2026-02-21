@@ -171,12 +171,6 @@ Request N+2 (after 14 days):
   → Execute report
 ```
 
-**Error Recovery:**
-
-- If a cached token fails (auth error), the cache is automatically invalidated
-- Function retries once with fresh tokens
-- This handles edge cases like manual token revocation or premature expiration
-
 **Monitoring:**
 
 Check Twilio Function logs to monitor cache effectiveness:
@@ -185,7 +179,6 @@ Using cached temporary token (TT)             ← Cache hit
 Using cached SuperSecuredToken (SST)          ← Cache hit
 New TT generated and cached (expires in...)   ← Cache miss
 New SST generated and cached (expires in...)  ← Cache miss
-Invalidating token cache                      ← Error recovery
 ```
 
 **Benefits:**
@@ -194,7 +187,6 @@ Invalidating token cache                      ← Error recovery
 - **Faster response times:** Cached tokens eliminate 2 round-trips to GoodData
 - **Lower rate limit risk:** Fewer authentication requests
 - **Cost efficiency:** Reduced network I/O and processing time
-- **Security:** Automatic token invalidation only when needed, not on every request
 
 ### Report Execution Flow
 

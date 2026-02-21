@@ -25,7 +25,6 @@ Users can enter any Task SID in the Flex UI and retrieve all associated Flex Ins
 - Intelligent token caching (99% reduction in auth API calls)
 - Flex Insights API integration
 - Filters and executes custom Insights reports
-- Auto-retry with error recovery
 
 ## How It Works
 
@@ -67,7 +66,7 @@ Users can enter any Task SID in the Flex UI and retrieve all associated Flex Ins
 - **Twilio CLI** with Flex and Serverless plugins installed
 - **Node.js** >= v22
 - **Flex Insights** workspace with API credentials
-- **Insights Report** configured to return segment IDs (single column output)
+- **Custom Flex Insights Report** configured to return segment IDs (single column output)
 
 ## Quick Start
 
