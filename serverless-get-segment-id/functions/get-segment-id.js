@@ -129,14 +129,34 @@ async function getTempToken() {
 
 // Find external ID elements in a display form (filters report by Task SID)
 async function findExternalIdElements(token, workspaceId, displayFormId, externalId) {
-  const response = await axios.post(
-    `https://analytics.ytica.com/gdc/md/${workspaceId}/obj/${displayFormId}/validElements`,
-    { validElementsRequest: { titles: [externalId] } },
-    { headers: { Cookie: `GDCAuthTT=${token}` } }
-  );
-  
-  if (!response.data?.validElements?.items?.length) {
-    throw new Error(`External ID '${externalId}' not found in Flex Insights`);
+  let response;
+  try {
+    response = await axios.post(
+      `https://analytics.ytica.com/gdc/md/${workspaceId}/obj/${displayFormId}/validElements`,
+      { validElementsRequest: { titles: [externalId] } },
+      { headers: { Cookie: `GDCAuthTT=${token}` } }
+    );
+  } catch (error) {
+    const status = error.response?.status;
+    const body = JSON.stringify(error.response?.data ?? {});
+    console.error(`validElements API error for externalId='${externalId}', displayFormId='${displayFormId}', workspaceId='${workspaceId}': HTTP ${status} - ${body}`);
+    if (status === 403) {
+      throw new Error(`GoodData returned 403 for validElements. Verify INSIGHTS_USERNAME has at least Editor role on workspace '${workspaceId}'.`);
+    }
+    if (status === 404) {
+      throw new Error(`GoodData returned 404 — display form object '${displayFormId}' not found in workspace '${workspaceId}'. Verify ANALYTICS_WORKSPACE and EXTERNAL_ID_DISPLAY_FORM are correct.`);
+    }
+    throw new Error(`validElements request failed with HTTP ${status}: ${error.message}`);
+  }
+
+  console.log(`validElements response for externalId='${externalId}': HTTP ${response.status}, items=${response.data?.validElements?.items?.length ?? 'missing'}`);
+
+  if (!response.data?.validElements) {
+    throw new Error(`Unexpected validElements response shape for externalId='${externalId}'. Raw response: ${JSON.stringify(response.data)}`);
+  }
+
+  if (!response.data.validElements.items?.length) {
+    throw new Error(`External ID '${externalId}' not found in Flex Insights workspace '${workspaceId}'. The task may not be indexed yet (Flex Insights has a ~15-30 min delay after a conversation ends).`);
   }
   
   return response.data.validElements.items.map(item => item.element.uri);
