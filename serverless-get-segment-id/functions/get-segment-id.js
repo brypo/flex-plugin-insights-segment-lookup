@@ -18,8 +18,8 @@
 const TokenValidator = require('twilio-flex-token-validator').functionValidator;
 const axios = require('axios');
 
-// GoodData object ID for External ID attribute (Flex Insights)
-const EXTERNAL_ID_DISPLAY_FORM = '5193';
+// GoodData semantic identifier for the External ID attribute.
+const EXTERNAL_ID_IDENTIFIER = 'label.conversations.external_id';
 
 // Token cache stored in global scope (persists across warm invocations)
 // This significantly reduces token generation API calls
@@ -127,44 +127,59 @@ async function getTempToken() {
   console.log('New TT generated and cached (expires in 10 minutes)');
 }
 
-// Find external ID elements in a display form (filters report by Task SID)
-async function findExternalIdElements(token, workspaceId, displayFormId, externalId) {
+// Resolve a GoodData semantic identifier to its workspace-specific object URI.
+async function resolveIdentifier(token, workspaceId, identifier) {
+  let res;
+  try {
+    res = await axios.post(
+      `https://analytics.ytica.com/gdc/md/${workspaceId}/identifiers`,
+      { identifierToUri: [identifier] },
+      { headers: { Cookie: `GDCAuthTT=${token}` } }
+    );
+  } catch (error) {
+    const status = error.response?.status;
+    const body = JSON.stringify(error.response?.data ?? {});
+    console.error(`identifiers API error for identifier='${identifier}', workspaceId='${workspaceId}': HTTP ${status} - ${body}`);
+    throw new Error(`Failed to resolve GoodData identifier '${identifier}' in workspace '${workspaceId}': HTTP ${status}`);
+  }
+
+  const uri = res.data?.identifiers?.[0]?.uri;
+  if (!uri) {
+    throw new Error(`Could not resolve GoodData identifier '${identifier}' in workspace '${workspaceId}'. Verify ANALYTICS_WORKSPACE is correct.`);
+  }
+  console.log(`Resolved identifier '${identifier}' to URI '${uri}'`);
+  return uri;
+}
+
+// Find external ID elements in a display form (filters report by Task SID).
+async function findExternalIdElements(token, workspaceId, externalId) {
+  const displayFormUri = await resolveIdentifier(token, workspaceId, EXTERNAL_ID_IDENTIFIER);
+
   let response;
   try {
     response = await axios.post(
-      `https://analytics.ytica.com/gdc/md/${workspaceId}/obj/${displayFormId}/validElements`,
+      `https://analytics.ytica.com${displayFormUri}/validElements`,
       { validElementsRequest: { titles: [externalId] } },
       { headers: { Cookie: `GDCAuthTT=${token}` } }
     );
   } catch (error) {
     const status = error.response?.status;
     const body = JSON.stringify(error.response?.data ?? {});
-    console.error(`validElements API error for externalId='${externalId}', displayFormId='${displayFormId}', workspaceId='${workspaceId}': HTTP ${status} - ${body}`);
-    if (status === 403) {
-      throw new Error(`GoodData returned 403 for validElements. Verify INSIGHTS_USERNAME has at least Editor role on workspace '${workspaceId}'.`);
-    }
-    if (status === 404) {
-      throw new Error(`GoodData returned 404 — display form object '${displayFormId}' not found in workspace '${workspaceId}'. Verify ANALYTICS_WORKSPACE and EXTERNAL_ID_DISPLAY_FORM are correct.`);
-    }
-    throw new Error(`validElements request failed with HTTP ${status}: ${error.message}`);
+    console.error(`validElements HTTP ${status} for externalId='${externalId}': ${body}`);
+    throw new Error(`validElements failed with HTTP ${status}: ${error.message}`);
   }
 
-  console.log(`validElements response for externalId='${externalId}': HTTP ${response.status}, items=${response.data?.validElements?.items?.length ?? 'missing'}`);
-
-  if (!response.data?.validElements) {
-    throw new Error(`Unexpected validElements response shape for externalId='${externalId}'. Raw response: ${JSON.stringify(response.data)}`);
+  const items = response.data?.validElements?.items;
+  if (!items?.length) {
+    throw new Error(`External ID '${externalId}' not found in Flex Insights. The task may not be indexed yet (default 1 hour delay after a conversation ends).`);
   }
 
-  if (!response.data.validElements.items?.length) {
-    throw new Error(`External ID '${externalId}' not found in Flex Insights workspace '${workspaceId}'. The task may not be indexed yet (Flex Insights has a ~15-30 min delay after a conversation ends).`);
-  }
-  
-  return response.data.validElements.items.map(item => item.element.uri);
+  return { displayFormUri, elementUris: items.map(item => item.element.uri) };
 }
 
 // Execute report with External ID filter and return execution URI
 async function executeReport(token, workspaceId, reportId, externalId) {
-  const elementUris = await findExternalIdElements(token, workspaceId, EXTERNAL_ID_DISPLAY_FORM, externalId);
+  const { displayFormUri, elementUris } = await findExternalIdElements(token, workspaceId, externalId);
   
   const response = await axios.post(
     `https://analytics.ytica.com/gdc/app/projects/${workspaceId}/execute/raw`,
@@ -173,7 +188,7 @@ async function executeReport(token, workspaceId, reportId, externalId) {
         report: `/gdc/md/${workspaceId}/obj/${reportId}`,
         context: {
           filters: [{
-            uri: `/gdc/md/${workspaceId}/obj/${EXTERNAL_ID_DISPLAY_FORM}`,
+            uri: displayFormUri,
             constraint: { type: "list", elements: elementUris }
           }]
         }
@@ -186,7 +201,7 @@ async function executeReport(token, workspaceId, reportId, externalId) {
   return response;
 }
 
-// Download report CSV data (polls until ready, max 10 seconds)
+// Download report CSV data (polls until ready, max 10 attempts)
 async function downloadReportCsv(token, reportExecution) {
   for (let i = 0; i < 10; i++) {
     try {
@@ -200,7 +215,7 @@ async function downloadReportCsv(token, reportExecution) {
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
-  throw new Error('Report timeout after 10 seconds');
+  throw new Error('Report fetch terminated after 10 attempts');
 }
 
 // Parse CSV data and extract segment IDs from first column
